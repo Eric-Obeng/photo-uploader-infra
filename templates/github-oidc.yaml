@@ -51,7 +51,11 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${AppRepoName}:ref:refs/heads/${AllowedBranch}
+                # Wildcarded after the org and repo name: GitHub can embed
+                # extra org/repo ID suffixes into the sub claim beyond the
+                # plain "org/repo" string, so an exact match can fail even
+                # when the org/repo/branch are all correct.
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}*/${AppRepoName}*:ref:refs/heads/${AllowedBranch}
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-github-app-deploy-role
@@ -107,7 +111,9 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${InfraRepoName}:ref:refs/heads/${AllowedBranch}
+                # See AppDeployRole above for why this is wildcarded rather
+                # than an exact org/repo match.
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}*/${InfraRepoName}*:ref:refs/heads/${AllowedBranch}
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-github-infra-deploy-role
@@ -133,6 +139,10 @@ Resources:
               - 'cloudformation:DescribeStackEvents'
               - 'cloudformation:GetTemplate'
               - 'cloudformation:ListStackResources'
+              - 'cloudformation:CreateChangeSet'
+              - 'cloudformation:DescribeChangeSet'
+              - 'cloudformation:ExecuteChangeSet'
+              - 'cloudformation:DeleteChangeSet'
             Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${EnvironmentName}-bootstrap/*
           - Effect: Allow
             Action:

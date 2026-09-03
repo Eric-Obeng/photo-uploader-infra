@@ -205,7 +205,7 @@ Resources:
         BlueTargetGroupArn: !GetAtt AlbStack.Outputs.BlueTargetGroupArn
         ImagesBucketArn: !GetAtt StorageStack.Outputs.ImagesBucketArn
         ImagesBucketName: !GetAtt StorageStack.Outputs.ImagesBucketName
-        CloudFrontDomainName: !GetAtt CdnStack.Outputs.CloudFrontDomainName
+        CloudFrontDomainName: !GetAtt CdnStack.Outputs.DistributionDomainName
         DatabaseSecretArn: !GetAtt DatabaseStack.Outputs.DatabaseSecretArn
         DatabaseEndpointAddress: !GetAtt DatabaseStack.Outputs.DatabaseEndpointAddress
         DatabaseEndpointPort: !GetAtt DatabaseStack.Outputs.DatabaseEndpointPort

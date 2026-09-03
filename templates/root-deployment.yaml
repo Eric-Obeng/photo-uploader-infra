@@ -1,0 +1,10 @@
+template-file-path: templates/root.yaml
+
+parameters:
+  EnvironmentName: photo-uploader
+  TemplateBucketName: photo-uploader-deploy-artifacts-PENDING-PENDING
+  TemplateVersion: initial
+  AccessLogsBucketName: photo-uploader-access-logs-PENDING-PENDING
+
+tags: {}
+

@@ -1,0 +1,72 @@
+name: Deploy Bootstrap and Sync Templates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "templates/bootstrap.yaml"
+      - "templates/nested/**"
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  deploy-bootstrap-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.INFRA_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Idempotent: a no-op if bootstrap.yaml hasn't changed since the last run.
+      - name: Deploy bootstrap stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name photo-uploader-bootstrap \
+            --template-file templates/bootstrap.yaml \
+            --parameter-overrides EnvironmentName=photo-uploader \
+            --no-fail-on-empty-changeset
+
+      # Bucket names follow a fixed, deterministic naming convention (see
+      # bootstrap.yaml), so they can be computed here without querying
+      # stack outputs.
+      - name: Compute bucket names
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "TEMPLATE_BUCKET=photo-uploader-deploy-artifacts-${ACCOUNT_ID}-${{ secrets.AWS_REGION }}" >> "$GITHUB_ENV"
+          echo "ACCESS_LOGS_BUCKET=photo-uploader-access-logs-${ACCOUNT_ID}-${{ secrets.AWS_REGION }}" >> "$GITHUB_ENV"
+
+      - name: Sync nested templates to S3
+        run: |
+          aws s3 sync templates/nested/ "s3://$TEMPLATE_BUCKET/${{ github.sha }}/nested/" --delete
+
+      # root.yaml's nested AWS::CloudFormation::Stack resources only pick up
+      # child-template changes when the TemplateURL string itself changes,
+      # so TemplateVersion must be bumped to this commit's SHA every time.
+      - name: Update the Git sync deployment file
+        run: |
+          cat > templates/root-deployment.yaml <<EOF
+          template-file-path: templates/root.yaml
+
+          parameters:
+            EnvironmentName: photo-uploader
+            TemplateBucketName: $TEMPLATE_BUCKET
+            TemplateVersion: ${{ github.sha }}
+            AccessLogsBucketName: $ACCESS_LOGS_BUCKET
+
+          tags: {}
+          EOF
+
+      - name: Commit and push the updated deployment file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add templates/root-deployment.yaml
+          git diff --cached --quiet && exit 0
+          git commit -m "Point TemplateVersion at ${{ github.sha }}"
+          git push

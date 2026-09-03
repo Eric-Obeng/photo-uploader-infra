@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  S3 buckets for the uploaded photos and for the CodePipeline artifact
+  store.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: photo-uploader
+
+  AccessLogsBucketName:
+    Type: String
+    Description: Name of the shared S3 access-logs bucket (created in the standalone bootstrap stack)
+
+Resources:
+  ##############################################################
+  # S3 bucket that stores uploaded photos. Served to the public
+  # only through the CloudFront distribution (see cdn.yaml for
+  # its bucket policy).
+  ##############################################################
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-images-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessLogsBucketName
+        LogFilePrefix: images-bucket/
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-images
+
+  ##############################################################
+  # S3 bucket used as CodePipeline's artifact store and as the
+  # source location for the appspec.yaml/taskdef.json bundle
+  # the app repo's workflow uploads for each deployment.
+  ##############################################################
+  PipelineArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-pipeline-artifacts-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessLogsBucketName
+        LogFilePrefix: pipeline-artifacts-bucket/
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-pipeline-artifacts
+
+  PipelineArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PipelineArtifactsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt PipelineArtifactsBucket.Arn
+              - !Sub ${PipelineArtifactsBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+Outputs:
+  ImagesBucketName:
+    Value: !Ref ImagesBucket
+
+  ImagesBucketArn:
+    Value: !GetAtt ImagesBucket.Arn
+
+  ImagesBucketRegionalDomainName:
+    Value: !GetAtt ImagesBucket.RegionalDomainName
+
+  PipelineArtifactsBucketName:
+    Value: !Ref PipelineArtifactsBucket
+
+  PipelineArtifactsBucketArn:
+    Value: !GetAtt PipelineArtifactsBucket.Arn

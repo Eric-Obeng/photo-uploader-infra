@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Standalone stack (not nested under root.yaml) that creates the IAM
+  roles GitHub Actions assumes via OpenID Connect to deploy this project,
+  using the account's existing token.actions.githubusercontent.com OIDC
+  provider.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: photo-uploader
+
+  GitHubOrg:
+    Type: String
+    Default: Eric-Obeng
+
+  AppRepoName:
+    Type: String
+    Default: photo-uploader-app
+
+  InfraRepoName:
+    Type: String
+    Default: photo-uploader-infra
+
+  AllowedBranch:
+    Type: String
+    Default: main
+
+  RootStackName:
+    Type: String
+    Default: photo-uploader
+    Description: Name of the deployed root.yaml stack, so AppDeployRole can read its outputs
+
+Resources:
+  ##############################################################
+  # IAM role assumed by the app repo's GitHub Actions workflow
+  # to push container images to ECR.
+  ##############################################################
+  AppDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-github-app-deploy-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: 'sts:AssumeRoleWithWebIdentity'
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${AppRepoName}:ref:refs/heads/${AllowedBranch}
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-github-app-deploy-role
+
+  ##############################################################
+  # Permissions AppDeployRole needs to push images to ECR.
+  ##############################################################
+  AppDeployPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${EnvironmentName}-github-app-deploy-policy
+      Roles:
+        - !Ref AppDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: 'ecr:GetAuthorizationToken'
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'ecr:BatchCheckLayerAvailability'
+              - 'ecr:PutImage'
+              - 'ecr:InitiateLayerUpload'
+              - 'ecr:UploadLayerPart'
+              - 'ecr:CompleteLayerUpload'
+              - 'ecr:BatchGetImage'
+            Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EnvironmentName}-app
+          - Effect: Allow
+            Action: 'cloudformation:DescribeStacks'
+            Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${RootStackName}/*
+          - Effect: Allow
+            Action: 's3:PutObject'
+            Resource: !Sub arn:${AWS::Partition}:s3:::${EnvironmentName}-pipeline-artifacts-${AWS::AccountId}-${AWS::Region}/source/*
+
+  ##############################################################
+  # IAM role assumed by the infra repo's GitHub Actions workflow
+  # to deploy the bootstrap stack and upload nested templates
+  # to S3.
+  ##############################################################
+  InfraDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-github-infra-deploy-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: 'sts:AssumeRoleWithWebIdentity'
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${InfraRepoName}:ref:refs/heads/${AllowedBranch}
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-github-infra-deploy-role
+
+  ##############################################################
+  # Permissions InfraDeployRole needs to deploy the bootstrap
+  # stack and upload nested templates to its S3 bucket.
+  ##############################################################
+  InfraDeployPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${EnvironmentName}-github-infra-deploy-policy
+      Roles:
+        - !Ref InfraDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'cloudformation:CreateStack'
+              - 'cloudformation:UpdateStack'
+              - 'cloudformation:DescribeStacks'
+              - 'cloudformation:DescribeStackEvents'
+              - 'cloudformation:GetTemplate'
+              - 'cloudformation:ListStackResources'
+            Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${EnvironmentName}-bootstrap/*
+          - Effect: Allow
+            Action:
+              - 's3:CreateBucket'
+              - 's3:PutBucketPolicy'
+              - 's3:PutBucketVersioning'
+              - 's3:PutEncryptionConfiguration'
+              - 's3:PutBucketPublicAccessBlock'
+              - 's3:PutBucketLogging'
+              - 's3:PutBucketOwnershipControls'
+              - 's3:PutBucketTagging'
+              - 's3:GetBucketPolicy'
+            Resource: !Sub arn:${AWS::Partition}:s3:::${EnvironmentName}-*-${AWS::AccountId}-${AWS::Region}
+          - Effect: Allow
+            Action:
+              - 's3:PutObject'
+              - 's3:GetObject'
+              - 's3:ListBucket'
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${EnvironmentName}-deploy-artifacts-${AWS::AccountId}-${AWS::Region}
+              - !Sub arn:${AWS::Partition}:s3:::${EnvironmentName}-deploy-artifacts-${AWS::AccountId}-${AWS::Region}/*
+
+Outputs:
+  AppDeployRoleArn:
+    Value: !GetAtt AppDeployRole.Arn
+
+  InfraDeployRoleArn:
+    Value: !GetAtt InfraDeployRole.Arn

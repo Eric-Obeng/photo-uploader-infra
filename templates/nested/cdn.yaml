@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFront distribution with Origin Access Control fronting the images
+  S3 bucket, plus the bucket policy that restricts it to CloudFront only.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: photo-uploader
+
+  ImagesBucketName:
+    Type: String
+
+  ImagesBucketArn:
+    Type: String
+
+  ImagesBucketRegionalDomainName:
+    Type: String
+
+Resources:
+  ##############################################################
+  # Origin Access Control CloudFront uses to sign requests to
+  # the images S3 bucket.
+  ##############################################################
+  ImagesOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${EnvironmentName}-images-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ##############################################################
+  # CloudFront distribution that serves the uploaded photos.
+  ##############################################################
+  ImagesDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${EnvironmentName} images distribution
+        PriceClass: PriceClass_200
+        HttpVersion: http2
+        DefaultCacheBehavior:
+          TargetOriginId: images-s3-origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS managed: CachingOptimized
+          Compress: true
+        Origins:
+          - Id: images-s3-origin
+            DomainName: !Ref ImagesBucketRegionalDomainName
+            OriginAccessControlId: !GetAtt ImagesOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-images-distribution
+
+  ##############################################################
+  # Bucket policy denying non-HTTPS access and allowing reads
+  # only from this CloudFront distribution.
+  ##############################################################
+  ImagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ImagesBucketName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Ref ImagesBucketArn
+              - !Sub ${ImagesBucketArn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: AllowCloudFrontOAC
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: 's3:GetObject'
+            Resource: !Sub ${ImagesBucketArn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${ImagesDistribution}
+
+Outputs:
+  DistributionId:
+    Value: !Ref ImagesDistribution
+
+  DistributionDomainName:
+    Value: !GetAtt ImagesDistribution.DomainName

@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  CodePipeline that deploys new application images to ECS via CodeDeploy
+  blue/green.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: photo-uploader
+
+  EcrRepositoryName:
+    Type: String
+
+  ImageTag:
+    Type: String
+    Default: latest
+
+  PipelineArtifactsBucketName:
+    Type: String
+
+  CodeDeployApplicationName:
+    Type: String
+
+  CodeDeployDeploymentGroupName:
+    Type: String
+
+  DeploymentConfigName:
+    Type: String
+    Default: CodeDeployDefault.ECSAllAtOnce
+
+  EcsClusterName:
+    Type: String
+
+  EcsServiceName:
+    Type: String
+
+  EcsTaskExecutionRoleArn:
+    Type: String
+
+  EcsTaskRoleArn:
+    Type: String
+
+Resources:
+  ##############################################################
+  # IAM role CodePipeline assumes to read its source artifacts
+  # and start a CodeDeploy deployment.
+  ##############################################################
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-codepipeline-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: "sts:AssumeRole"
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-codepipeline-role
+
+  ##############################################################
+  # Permissions PipelineServiceRole needs to read its source
+  # artifacts and start a CodeDeploy deployment.
+  ##############################################################
+  PipelinePermissionsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${EnvironmentName}-pipeline-permissions
+      Roles:
+        - !Ref PipelineServiceRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:GetBucketVersioning"
+              - "s3:ListBucket"
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${PipelineArtifactsBucketName}
+              - !Sub arn:${AWS::Partition}:s3:::${PipelineArtifactsBucketName}/*
+          - Effect: Allow
+            Action:
+              - "ecr:DescribeImages"
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+            Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepositoryName}
+          - Effect: Allow
+            Action: "ecr:GetAuthorizationToken"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - "codedeploy:GetApplication"
+              - "codedeploy:GetApplicationRevision"
+              - "codedeploy:RegisterApplicationRevision"
+            Resource: !Sub arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:application:${CodeDeployApplicationName}
+          - Effect: Allow
+            Action:
+              - "codedeploy:CreateDeployment"
+              - "codedeploy:GetDeployment"
+            Resource: !Sub arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:${CodeDeployApplicationName}/${CodeDeployDeploymentGroupName}
+          - Effect: Allow
+            Action: "codedeploy:GetDeploymentConfig"
+            Resource: !Sub arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:${DeploymentConfigName}
+          - Effect: Allow
+            Action: "ecs:DescribeServices"
+            Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${EcsClusterName}/${EcsServiceName}
+          - Effect: Allow
+            Action: "iam:PassRole"
+            Resource:
+              - !Ref EcsTaskExecutionRoleArn
+              - !Ref EcsTaskRoleArn
+
+  ##############################################################
+  # Pipeline with a dual source (the pushed ECR image and the
+  # appspec.yaml/taskdef.json bundle) feeding a CodeDeployToECS
+  # deploy stage.
+  ##############################################################
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub ${EnvironmentName}-pipeline
+      RoleArn: !GetAtt PipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineArtifactsBucketName
+      PipelineType: V2
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: ImageSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: ECR
+                Version: "1"
+              Configuration:
+                RepositoryName: !Ref EcrRepositoryName
+                ImageTag: !Ref ImageTag
+              OutputArtifacts:
+                - Name: ImageSourceArtifact
+              RunOrder: 1
+            - Name: DeploySpecSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: "1"
+              Configuration:
+                S3Bucket: !Ref PipelineArtifactsBucketName
+                S3ObjectKey: source/deploy-spec.zip
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: DeploySpecArtifact
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: DeployToEcs
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CodeDeployToECS
+                Version: "1"
+              Configuration:
+                ApplicationName: !Ref CodeDeployApplicationName
+                DeploymentGroupName: !Ref CodeDeployDeploymentGroupName
+                TaskDefinitionTemplateArtifact: DeploySpecArtifact
+                TaskDefinitionTemplatePath: taskdef.json
+                AppSpecTemplateArtifact: DeploySpecArtifact
+                AppSpecTemplatePath: appspec.yaml
+                Image1ArtifactName: ImageSourceArtifact
+                Image1ContainerName: IMAGE1_NAME
+              InputArtifacts:
+                - Name: ImageSourceArtifact
+                - Name: DeploySpecArtifact
+              RunOrder: 1
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-pipeline
+
+Outputs:
+  PipelineName:
+    Value: !Ref Pipeline
+
+  PipelineArn:
+    Value: !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}
+
+  PipelineServiceRoleArn:
+    Value: !GetAtt PipelineServiceRole.Arn
+

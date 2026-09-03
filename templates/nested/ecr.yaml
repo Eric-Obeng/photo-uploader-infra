@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  ECR repository for the application's container image.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: photo-uploader
+
+Resources:
+  ##############################################################
+  # ECR repository holding the app's container images. Scans
+  # each pushed image and keeps only the 10 most recent.
+  ##############################################################
+  AppRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Sub ${EnvironmentName}-app
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: >
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep only the last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-app-repository
+
+Outputs:
+  RepositoryName:
+    Value: !Ref AppRepository
+
+  RepositoryArn:
+    Value: !GetAtt AppRepository.Arn
+
+  RepositoryUri:
+    Value: !GetAtt AppRepository.RepositoryUri

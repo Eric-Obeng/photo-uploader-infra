@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  Standalone stack (not nested under root.yaml) that creates the S3
+  buckets used to store deployment artifacts and shared access logs for
+  the Photo Uploader infrastructure.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: photo-uploader
+
+Resources:
+  ##############################################################
+  # S3 bucket that stores server access logs for the other
+  # buckets in this stack and in storage.yaml.
+  ##############################################################
+  AccessLogsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      guard:
+        SuppressedRules:
+          - S3_BUCKET_LOGGING_ENABLED
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-access-logs-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-access-logs
+
+  AccessLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AccessLogsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt AccessLogsBucket.Arn
+              - !Sub ${AccessLogsBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+          - Sid: AllowS3LoggingServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: "s3:PutObject"
+            Resource: !Sub ${AccessLogsBucket.Arn}/*
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:s3:::${EnvironmentName}-*-${AWS::AccountId}-${AWS::Region}
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  ##############################################################
+  # S3 bucket that holds the nested CloudFormation templates
+  # root.yaml loads at deploy time.
+  ##############################################################
+  DeploymentArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-deploy-artifacts-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessLogsBucket
+        LogFilePrefix: deploy-artifacts-bucket/
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-deploy-artifacts
+
+  DeploymentArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DeploymentArtifactsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt DeploymentArtifactsBucket.Arn
+              - !Sub ${DeploymentArtifactsBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+Outputs:
+  DeploymentArtifactsBucketName:
+    Value: !Ref DeploymentArtifactsBucket
+
+  DeploymentArtifactsBucketArn:
+    Value: !GetAtt DeploymentArtifactsBucket.Arn
+
+  AccessLogsBucketName:
+    Value: !Ref AccessLogsBucket
+
+  AccessLogsBucketArn:
+    Value: !GetAtt AccessLogsBucket.Arn
+

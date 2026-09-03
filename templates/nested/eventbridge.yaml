@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  EventBridge rule that triggers the CodePipeline deployment when an
+  image is pushed to ECR.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: photo-uploader
+
+  EcrRepositoryName:
+    Type: String
+
+  PipelineArn:
+    Type: String
+
+Resources:
+  ##############################################################
+  # IAM role assumed by EventBridge to start the CodePipeline
+  # execution.
+  ##############################################################
+  EventBridgeInvokePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-eventbridge-pipeline-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-eventbridge-pipeline-role
+
+  ##############################################################
+  # Permissions EventBridgeInvokePipelineRole needs to start the
+  # pipeline execution.
+  ##############################################################
+  EventBridgeInvokePipelinePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${EnvironmentName}-eventbridge-pipeline-policy
+      Roles:
+        - !Ref EventBridgeInvokePipelineRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: 'codepipeline:StartPipelineExecution'
+            Resource: !Ref PipelineArn
+
+  ##############################################################
+  # Rule matching a successful push of the "latest" tag to the
+  # app's ECR repository.
+  ##############################################################
+  EcrImagePushRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${EnvironmentName}-ecr-latest-push-rule
+      Description: Matches a successful push of the "latest" tag to the app's ECR repository.
+      EventPattern:
+        source:
+          - aws.ecr
+        detail-type:
+          - ECR Image Action
+        detail:
+          action-type:
+            - PUSH
+          result:
+            - SUCCESS
+          repository-name:
+            - !Ref EcrRepositoryName
+          image-tag:
+            - latest
+      State: ENABLED
+      Targets:
+        - Id: !Sub ${EnvironmentName}-pipeline-target
+          Arn: !Ref PipelineArn
+          RoleArn: !GetAtt EventBridgeInvokePipelineRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ecr-latest-push-rule
+
+Outputs:
+  RuleName:
+    Value: !Ref EcrImagePushRule
+
+  RuleArn:
+    Value: !GetAtt EcrImagePushRule.Arn

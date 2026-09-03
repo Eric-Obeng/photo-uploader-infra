@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CodeDeploy application and deployment group for ECS blue/green
+  deployments.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: photo-uploader
+
+  EcsClusterName:
+    Type: String
+
+  EcsServiceName:
+    Type: String
+
+  ListenerArn:
+    Type: String
+
+  BlueTargetGroupName:
+    Type: String
+
+  GreenTargetGroupName:
+    Type: String
+
+Resources:
+  ##############################################################
+  # IAM role CodeDeploy assumes to shift traffic between the
+  # blue and green target groups and update the ECS service.
+  ##############################################################
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-codedeploy-ecs-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AWSCodeDeployRoleForECS
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-codedeploy-ecs-role
+
+  ##############################################################
+  # CodeDeploy application representing the ECS service.
+  ##############################################################
+  Application:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Sub ${EnvironmentName}-app
+      ComputePlatform: ECS
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-app
+
+  ##############################################################
+  # Deployment group defining how blue/green traffic shifting,
+  # rollback, and target-group cutover work for the service.
+  ##############################################################
+  DeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref Application
+      DeploymentGroupName: !Sub ${EnvironmentName}-deployment-group
+      ServiceRoleArn: !GetAtt CodeDeployServiceRole.Arn
+      DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
+      DeploymentStyle:
+        DeploymentType: BLUE_GREEN
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+      BlueGreenDeploymentConfiguration:
+        TerminateBlueInstancesOnDeploymentSuccess:
+          Action: TERMINATE
+          TerminationWaitTimeInMinutes: 5
+        DeploymentReadyOption:
+          ActionOnTimeout: CONTINUE_DEPLOYMENT
+      AutoRollbackConfiguration:
+        Enabled: true
+        Events:
+          - DEPLOYMENT_FAILURE
+      ECSServices:
+        - ClusterName: !Ref EcsClusterName
+          ServiceName: !Ref EcsServiceName
+      LoadBalancerInfo:
+        TargetGroupPairInfoList:
+          - ProdTrafficRoute:
+              ListenerArns:
+                - !Ref ListenerArn
+            TargetGroups:
+              - Name: !Ref BlueTargetGroupName
+              - Name: !Ref GreenTargetGroupName
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-deployment-group
+
+Outputs:
+  ApplicationName:
+    Value: !Ref Application
+
+  DeploymentGroupName:
+    Value: !Ref DeploymentGroup
+
+  CodeDeployServiceRoleArn:
+    Value: !GetAtt CodeDeployServiceRole.Arn

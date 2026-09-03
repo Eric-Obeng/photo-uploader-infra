@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  RDS PostgreSQL instance for photo metadata, with credentials managed by
+  Secrets Manager.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: photo-uploader
+
+  PrivateSubnet1Id:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnet2Id:
+    Type: AWS::EC2::Subnet::Id
+
+  DatabaseSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  DatabaseInstanceClass:
+    Type: String
+    Default: db.t3.micro
+
+  DatabaseName:
+    Type: String
+    Default: photouploader
+
+  DatabaseAllocatedStorage:
+    Type: Number
+    Default: 20
+
+Resources:
+  ##############################################################
+  # Subnet group restricting the RDS instance to the private
+  # subnets.
+  ##############################################################
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for the RDS PostgreSQL instance
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-db-subnet-group
+
+  ##############################################################
+  # RDS PostgreSQL instance that stores photo metadata. Its
+  # master password is generated and stored in Secrets Manager
+  # rather than set here.
+  ##############################################################
+  DatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !Ref DatabaseAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      AutoMinorVersionUpgrade: true
+      DBName: !Ref DatabaseName
+      MasterUsername: photouploader_admin
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroupId
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-db
+
+Outputs:
+  DatabaseEndpointAddress:
+    Value: !GetAtt DatabaseInstance.Endpoint.Address
+
+  DatabaseEndpointPort:
+    Value: !GetAtt DatabaseInstance.Endpoint.Port
+
+  DatabaseName:
+    Value: !Ref DatabaseName
+
+  DatabaseSecretArn:
+    Value: !GetAtt DatabaseInstance.MasterUserSecret.SecretArn

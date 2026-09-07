@@ -112,6 +112,9 @@ Resources:
             Action: "ecs:DescribeServices"
             Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${EcsClusterName}/${EcsServiceName}
           - Effect: Allow
+            Action: "ecs:RegisterTaskDefinition"
+            Resource: "*"
+          - Effect: Allow
             Action: "iam:PassRole"
             Resource:
               - !Ref EcsTaskExecutionRoleArn

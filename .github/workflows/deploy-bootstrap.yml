@@ -48,8 +48,14 @@ jobs:
       # root.yaml's nested AWS::CloudFormation::Stack resources only pick up
       # child-template changes when the TemplateURL string itself changes,
       # so TemplateVersion must be bumped to this commit's SHA every time.
+      #
+      # ServiceDesiredCount is manually flipped between 0 and 1 as part of
+      # the first-deploy bootstrap sequence (see ecs.yaml) - preserve
+      # whatever value is already there instead of resetting it to the
+      # default on every automated run.
       - name: Update the Git sync deployment file
         run: |
+          CURRENT_DESIRED_COUNT=$(grep -oP '(?<=^  ServiceDesiredCount: ).*' templates/root-deployment.yaml || echo 1)
           cat > templates/root-deployment.yaml <<EOF
           template-file-path: templates/root.yaml
 
@@ -58,6 +64,7 @@ jobs:
             TemplateBucketName: $TEMPLATE_BUCKET
             TemplateVersion: ${{ github.sha }}
             AccessLogsBucketName: $ACCESS_LOGS_BUCKET
+            ServiceDesiredCount: $CURRENT_DESIRED_COUNT
 
           tags: {}
           EOF

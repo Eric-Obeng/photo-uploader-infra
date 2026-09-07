@@ -79,6 +79,10 @@ Parameters:
     Type: Number
     Default: 60
 
+  ServiceDesiredCount:
+    Type: Number
+    Default: 1
+
 Resources:
   NetworkStack:
     Type: AWS::CloudFormation::Stack
@@ -213,6 +217,7 @@ Resources:
         TaskCpu: !Ref TaskCpu
         TaskMemory: !Ref TaskMemory
         CpuScalingTargetValue: !Ref CpuScalingTargetValue
+        ServiceDesiredCount: !Ref ServiceDesiredCount
       Tags:
         - Key: EnvironmentName
           Value: !Ref EnvironmentName

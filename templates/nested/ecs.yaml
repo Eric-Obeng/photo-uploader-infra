@@ -68,6 +68,14 @@ Parameters:
     Type: Number
     Default: 60
 
+  ServiceDesiredCount:
+    Type: Number
+    Default: 1
+    Description: >
+      Set to 0 for the very first deploy, before any image exists in ECR
+      (the service can't start tasks without one). Flip back to 1 once an
+      image has been pushed.
+
 Resources:
   ##############################################################
   # Fargate cluster that runs the application service.
@@ -243,7 +251,7 @@ Resources:
       ServiceName: !Sub ${EnvironmentName}-service
       Cluster: !Ref Cluster
       TaskDefinition: !Ref TaskDefinition
-      DesiredCount: 1
+      DesiredCount: !Ref ServiceDesiredCount
       LaunchType: FARGATE
       DeploymentController:
         Type: CODE_DEPLOY

@@ -44,6 +44,9 @@ Parameters:
   CloudFrontDomainName:
     Type: String
 
+  LoadBalancerDnsName:
+    Type: String
+
   DatabaseSecretArn:
     Type: String
 
@@ -228,6 +231,8 @@ Resources:
               Value: !Ref ImagesBucketName
             - Name: CLOUDFRONT_DOMAIN
               Value: !Ref CloudFrontDomainName
+            - Name: CORS_ORIGINS
+              Value: !Sub http://${LoadBalancerDnsName}
           Secrets:
             - Name: DB_CREDENTIALS
               ValueFrom: !Ref DatabaseSecretArn

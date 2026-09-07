@@ -69,6 +69,9 @@ jobs:
           tags: {}
           EOF
 
+      # Retries on push rejection (another commit landing on main while this
+      # job was running) by rebasing onto the new tip and re-generating the
+      # deployment file, rather than failing outright.
       - name: Commit and push the updated deployment file
         run: |
           git config user.name "github-actions[bot]"
@@ -76,4 +79,12 @@ jobs:
           git add templates/root-deployment.yaml
           git diff --cached --quiet && exit 0
           git commit -m "Point TemplateVersion at ${{ github.sha }}"
-          git push
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main
+          done
+          echo "Failed to push after 5 attempts" >&2
+          exit 1

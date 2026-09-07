@@ -25,10 +25,6 @@ Parameters:
   CodeDeployDeploymentGroupName:
     Type: String
 
-  DeploymentConfigName:
-    Type: String
-    Default: CodeDeployDefault.ECSAllAtOnce
-
   EcsClusterName:
     Type: String
 
@@ -99,7 +95,9 @@ Resources:
               - "codedeploy:GetApplication"
               - "codedeploy:GetApplicationRevision"
               - "codedeploy:RegisterApplicationRevision"
-            Resource: !Sub arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:application:${CodeDeployApplicationName}
+            Resource:
+              - !Sub arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:application:${CodeDeployApplicationName}
+              - !Sub arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:application:${CodeDeployApplicationName}/*
           - Effect: Allow
             Action:
               - "codedeploy:CreateDeployment"
@@ -107,7 +105,7 @@ Resources:
             Resource: !Sub arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:${CodeDeployApplicationName}/${CodeDeployDeploymentGroupName}
           - Effect: Allow
             Action: "codedeploy:GetDeploymentConfig"
-            Resource: !Sub arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:${DeploymentConfigName}
+            Resource: !Sub arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:*
           - Effect: Allow
             Action: "ecs:DescribeServices"
             Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${EcsClusterName}/${EcsServiceName}
@@ -119,6 +117,11 @@ Resources:
             Resource:
               - !Ref EcsTaskExecutionRoleArn
               - !Ref EcsTaskRoleArn
+            Condition:
+              StringEquals:
+                iam:PassedToService:
+                  - ecs.amazonaws.com
+                  - ecs-tasks.amazonaws.com
 
   ##############################################################
   # Pipeline with a dual source (the pushed ECR image and the

@@ -1,3 +1,5 @@
+# Retry nudge: previous sync attempt was rejected because the stack was
+# still mid-rollback-cleanup. No values below changed.
 template-file-path: templates/root.yaml
 
 parameters:

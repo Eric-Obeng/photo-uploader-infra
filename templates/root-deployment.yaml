@@ -1,13 +1,10 @@
-# Retry nudge: previous sync attempt was rejected because the stack was
-# still mid-rollback-cleanup. No values below changed.
 template-file-path: templates/root.yaml
 
 parameters:
   EnvironmentName: photo-uploader
   TemplateBucketName: photo-uploader-deploy-artifacts-288761743924-eu-central-1
-  TemplateVersion: 51fbf57a32467f0064f5e6c302cd6124c16915be
+  TemplateVersion: f6f200badbecb5defc14b8f765866fe9691e9a5e
   AccessLogsBucketName: photo-uploader-access-logs-288761743924-eu-central-1
   ServiceDesiredCount: 0
 
 tags: {}
-

@@ -11,7 +11,7 @@ Parameters:
     Default: photo-uploader
 
 Resources:
-  ##############################################################
+  ###############################################################
   # S3 bucket that stores server access logs for the other
   # buckets in this stack and in storage.yaml.
   ##############################################################

@@ -1,3 +1,10 @@
 template-file-path: templates/root.yaml
-parameters: {}
+
+parameters:
+  EnvironmentName: photo-uploader
+  TemplateBucketName: photo-uploader-deploy-artifacts-288761749193-eu-central-1
+  TemplateVersion: d1df6c0b739f63ee61664528bf6d2382c717a163
+  AccessLogsBucketName: photo-uploader-access-logs-288761749193-eu-central-1
+  ServiceDesiredCount: 1
+
 tags: {}

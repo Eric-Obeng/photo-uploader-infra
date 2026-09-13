@@ -1,7 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Multi-AZ VPC with public and private subnets, route tables, NAT, and
-  VPC endpoints for S3, ECR, and CloudWatch Logs.
+  Multi-AZ VPC with public and private subnets, route tables, and VPC
+  endpoints for S3, ECR, and CloudWatch Logs. Private subnets have no
+  NAT Gateway: the endpoints cover every AWS-service dependency the
+  application has.
 
 Parameters:
   EnvironmentName:
@@ -132,30 +134,11 @@ Resources:
           Value: !Sub ${EnvironmentName}-private-subnet-2
 
   ##############################################################
-  # Elastic IP attached to the NAT gateway.
+  # Private subnets have no default route to the internet: all
+  # AWS-service traffic (S3, ECR, CloudWatch Logs) stays inside
+  # the VPC via the endpoints below, and there is no other
+  # outbound-internet dependency, so no NAT Gateway is deployed.
   ##############################################################
-  NatGatewayEIP:
-    Type: AWS::EC2::EIP
-    DependsOn: InternetGatewayAttachment
-    Properties:
-      Domain: vpc
-      Tags:
-        - Key: Name
-          Value: !Sub ${EnvironmentName}-nat-eip
-
-  ##############################################################
-  # NAT gateway that gives the private subnets outbound
-  # internet access.
-  ##############################################################
-  NatGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NatGatewayEIP.AllocationId
-      SubnetId: !Ref PublicSubnet1
-      Tags:
-        - Key: Name
-          Value: !Sub ${EnvironmentName}-nat
-
   PrivateRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -163,13 +146,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-private-rt
-
-  DefaultPrivateRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway
 
   PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation

@@ -1,9 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   Multi-AZ VPC with public and private subnets, route tables, and VPC
-  endpoints for S3, ECR, and CloudWatch Logs. Private subnets have no
-  NAT Gateway: the endpoints cover every AWS-service dependency the
-  application has.
+  endpoints for S3, ECR, CloudWatch Logs, and Secrets Manager. Private
+  subnets have no NAT Gateway: the endpoints cover every AWS-service
+  dependency the application has.
 
 Parameters:
   EnvironmentName:
@@ -165,7 +165,7 @@ Resources:
   VpcEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for interface VPC endpoints (ECR, CloudWatch Logs)
+      GroupDescription: Security group for interface VPC endpoints (ECR, CloudWatch Logs, Secrets Manager)
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -236,6 +236,22 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-logs-endpoint
+
+  SecretsManagerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-secretsmanager-endpoint
 
 Outputs:
   VpcId:

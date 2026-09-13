@@ -3,7 +3,7 @@ template-file-path: templates/root.yaml
 parameters:
   EnvironmentName: photo-uploader
   TemplateBucketName: photo-uploader-deploy-artifacts-288761749193-eu-central-1
-  TemplateVersion: ec6724fbb6e5438bdf4e8f9cea8295dd42b907ab
+  TemplateVersion: eda22c94edf0b23f9b367be9f8dbfa2342512927
   AccessLogsBucketName: photo-uploader-access-logs-288761749193-eu-central-1
   ServiceDesiredCount: 0
 
